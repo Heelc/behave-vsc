@@ -1,15 +1,16 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import { performance } from 'perf_hooks';
 import { config } from "../configuration";
 import { WorkspaceSettings } from "../settings";
 import { deleteFeatureFileSteps, getFeatureFileSteps, getFeatureNameFromContent } from './featureParser';
 import {
   countTestItemsInCollection, getAllTestItems, uriId, getWorkspaceFolder,
-  getUrisOfWkspFoldersWithFeatures, isFeatureFile, isStepsFile, TestCounts, findFiles, getContentFromFilesystem
+  getUrisOfWkspFoldersWithFeatures, isFeatureFile, isStepsFile, TestCounts, findFiles, getContentFromFilesystem, getWorkspaceUriForFile, WkspError
 } from '../common';
 import { parseStepsFileContent, getStepFileSteps, deleteStepFileSteps } from './stepsParser';
-import { TestData, TestFile } from './testFile';
-import { diagLog } from '../logger';
+import { TestData, TestFile, Scenario } from './testFile';
+import { diagLog, DiagLogType } from '../logger';
 import { deleteStepMappings, rebuildStepMappings, getStepMappings } from './stepMappings';
 
 
@@ -105,16 +106,28 @@ export class FileParser {
     deleteFeatureFileSteps(wkspSettings.featuresUri);
     deleteStepMappings(wkspSettings.featuresUri);
 
-    // replaced with custom findFiles function for now (see comment in findFiles function)
-    //const pattern = new vscode.RelativePattern(wkspSettings.uri, `${wkspSettings.workspaceRelativeFeaturesPath}/**/*.feature`);
-    //const featureFiles = await vscode.workspace.findFiles(pattern, null, undefined, cancelToken);
+    // 处理主features目录
     const featureFiles = await findFiles(wkspSettings.featuresUri, undefined, ".feature", cancelToken);
 
-    if (featureFiles.length < 1 && !cancelToken.isCancellationRequested)
-      throw `No feature files found in ${wkspSettings.featuresUri.fsPath}`;
+    // 处理额外的features目录
+    let allFeatureFiles = [...featureFiles];
+    for (const additionalPath of wkspSettings.additionalFeaturesPaths) {
+      if (cancelToken.isCancellationRequested)
+        break;
+
+      const additionalFeatureFiles = await findFiles(additionalPath.uri, undefined, ".feature", cancelToken);
+      allFeatureFiles = [...allFeatureFiles, ...additionalFeatureFiles];
+
+      // 清理额外features目录的步骤映射
+      deleteFeatureFileSteps(additionalPath.uri);
+      deleteStepMappings(additionalPath.uri);
+    }
+
+    if (allFeatureFiles.length < 1 && !cancelToken.isCancellationRequested)
+      throw `No feature files found in ${wkspSettings.featuresUri.fsPath} or additional features paths`;
 
     let processed = 0;
-    for (const uri of featureFiles) {
+    for (const uri of allFeatureFiles) {
       if (cancelToken.isCancellationRequested)
         break;
       const content = await getContentFromFilesystem(uri);
@@ -131,37 +144,47 @@ export class FileParser {
   }
 
 
-  private _parseStepsFiles = async (wkspSettings: WorkspaceSettings, cancelToken: vscode.CancellationToken,
-    caller: string): Promise<number> => {
+  private _parseStepsFiles = async (wkspSettings: WorkspaceSettings, cancelToken: vscode.CancellationToken, caller: string): Promise<number> => {
 
-    diagLog("removing existing steps for workspace: " + wkspSettings.name);
+    diagLog(`${caller}: parsing steps files for workspace ${wkspSettings.name}`);
+
     deleteStepFileSteps(wkspSettings.featuresUri);
 
-    let stepFiles: vscode.Uri[] = [];
-    if (wkspSettings.stepsSearchUri.path.startsWith(wkspSettings.featuresUri.path))
-      stepFiles = await findFiles(wkspSettings.stepsSearchUri, "steps", ".py", cancelToken);
-    else
-      stepFiles = await findFiles(wkspSettings.stepsSearchUri, undefined, ".py", cancelToken);
+    // 处理主features目录的步骤
+    const stepFiles = await findFiles(wkspSettings.stepsSearchUri, "steps", ".py", cancelToken);
 
-    stepFiles = stepFiles.filter(uri => isStepsFile(uri));
+    // 处理额外features目录的步骤
+    let allStepFiles = [...stepFiles];
+    for (const additionalPath of wkspSettings.additionalFeaturesPaths) {
+      if (cancelToken.isCancellationRequested)
+        break;
 
-    if (stepFiles.length < 1 && !cancelToken.isCancellationRequested) {
-      config.logger.showWarn("No step files found", wkspSettings.uri);
+      const additionalStepFiles = await findFiles(additionalPath.stepsSearchUri, "steps", ".py", cancelToken);
+      allStepFiles = [...allStepFiles, ...additionalStepFiles];
+
+      // 清理额外features目录的步骤
+      deleteStepFileSteps(additionalPath.uri);
+    }
+
+    if (allStepFiles.length < 1 && !cancelToken.isCancellationRequested) {
+      const msg = `No step files found in ${wkspSettings.stepsSearchUri.fsPath}`;
+      diagLog(msg, wkspSettings.uri, DiagLogType.warn);
+      config.logger.showWarn(msg, wkspSettings.uri);
       return 0;
     }
 
     let processed = 0;
-    for (const uri of stepFiles) {
+    for (const uri of allStepFiles) {
       if (cancelToken.isCancellationRequested)
         break;
+
       const content = await getContentFromFilesystem(uri);
-      await this._updateStepsFromStepsFileContent(wkspSettings.featuresUri, content, uri, caller);
+      await parseStepsFileContent(wkspSettings.featuresUri, content, uri, caller);
       processed++;
     }
 
     if (cancelToken.isCancellationRequested) {
-      // either findFiles or loop will have exited early, log it either way
-      diagLog(`${caller}: cancelling, _parseStepFiles stopped`);
+      diagLog(`${caller}: cancelling, _parseStepsFiles stopped`);
     }
 
     return processed;
@@ -475,6 +498,9 @@ export class FileParser {
 
       if (!isStepsFile(fileUri) && !isFeatureFile(fileUri))
         return;
+
+      // 在处理文件前清除该文件的诊断信息
+      config.logger.clearDiagnostics(fileUri);
 
       if (!content)
         content = await getContentFromFilesystem(fileUri);

@@ -38,6 +38,17 @@
 				"npm: watch-tests"
 			],
 			"problemMatcher": []
+		},
+		{
+			"label": "Test Popup Notifications",
+			"type": "shell",
+			"command": "./test-popup-notifications.sh",
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"group": "test",
+			"problemMatcher": []
 		}
 	]
 }

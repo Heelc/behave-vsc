@@ -1,3 +1,4 @@
 {
+    "behave-vsc.disablePopupNotifications": false,
     "behave-vsc.xRay": true
 }

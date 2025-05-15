@@ -18,6 +18,10 @@ Includes two-way step navigation, Gherkin syntax highlighting, autoformatting, a
 - Automatic Gherkin syntax highlighting (colourisation), including smart parameter recognition.
 - Smart test runs minimise behave instances by building an optimised `-i` regex param for behave based on the selected test nodes. (Unless `runParallel` is enabled.)
 - This extension supports multi-root workspaces, so you can run features from more than one project in a single instance of vscode. (Each project folder must have its own distinct features/steps folders.)
+- Error notification management:
+  - Option to disable popup notifications (`disablePopupNotifications` setting)
+  - Prevention of duplicate error popups within a short time period
+  - All errors are always logged to the output channel for reference
 
 ![Behave VSC demo gif](https://github.com/jimasp/behave-vsc/raw/main/images/behave-vsc.gif)
 
@@ -137,6 +141,7 @@ paths=my_tests/behave_features
 - *How do I enable automatic feature file formatting on save?* You can do this via a standard vscode setting: `"[gherkin]": { "editor.formatOnSave": true }`
 - *How do I disable feature file snippets?* You can do this via a standard vscode setting: `"[gherkin]": { "editor.suggest.showSnippets": false }`
 - *How do I disable autocomplete for feature file steps?* You can do this via a standard vscode setting: `"[gherkin]": { "editor.suggest.showFunctions": false }`
+- *How do I disable error popup notifications?* You can disable all popup notifications by adding `"behave-vsc.disablePopupNotifications": true` to your settings.json file. Errors and warnings will still be logged to the output channel but will not show popup notifications.
 - *Why can't I see print statements in the Behave VSC output window even though I have `stdout_capture=False` in my behave config file?* Because the extension depends on the `--junit` behave argument. As per the behave docs, with this flag set, all stdout and stderr will be redirected and dumped to the junit report, regardless of the capture/no-capture options. If you want to see print statements, copy/paste the outputted command and run it manually (or run `python -m behave` for all test output).
 - *Where is the behave junit output stored?* In a temp folder that is deleted (recycled) each time the extension is started. The path is displayed on startup in the Behave VSC output window. (Note that if your test run uses runParallel, then multiple files are created for the same feature via a separate folder for each scenario. This is a workaround to stop the same junit file being written multiple times for the same feature, which in runParallel mode would stop us from being able to know the result of the test because each parallel behave execution would rewrite the file and mark scenarios not included in that execution as "skipped".)
 - *When will this extension have a release version?* When the code is more stable. At the moment the code is subject to rewrites/refactoring which makes bugs more likely.
@@ -166,6 +171,7 @@ paths=my_tests/behave_features
 - Try temporarily disabling other extensions.
 - Have you recently upgraded vscode, and does your python/behave environment match the one tested for this release? You can check the environment tested for each release in [github](https://github.com/jimasp/behave-vsc/releases) and downgrade as required.
 - Any extension errors should pop up in a notification window, but you can also look at debug logs and error stacks by enabling `xRay` in the extension settings and using vscode command "Developer: Toggle Developer Tools".
+- If you're seeing too many error popup notifications, you can disable them using the `disablePopupNotifications` setting. All errors will still be logged to the output channel.
 - The extension is only tested with a few example projects. It's possible that something specific to your project/setup/environment is not accounted for. See [Contributing](CONTRIBUTING.md) for instructions on debugging the extension with your own project. (If you debug with your own project, you may also wish to check whether the same issue occurs with one of the example project workspaces.)
 
 ---
@@ -187,3 +193,13 @@ paths=my_tests/behave_features
 ## Contributing
 
 If you would like to submit a pull request, please see the  [contributing](CONTRIBUTING.md) doc.
+
+## 设置
+
+### 全局设置
+
+* `behave-vsc.multiRootRunWorkspacesInParallel` - 在多根工作区中并行运行测试。
+* `behave-vsc.xRay` - 启用诊断日志记录（在开发者工具控制台中可见）。
+* `behave-vsc.disablePopupNotifications` - 禁用错误和警告的弹窗通知。错误和警告将仍然显示在问题窗口中。
+
+### 工作区设置
